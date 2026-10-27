@@ -107,6 +107,14 @@
                 </div>
             </div>
 
+            <!-- Banner indicador de Cooldown / Escaneo Bloqueado momentáneamente -->
+            <div id="scanner-cooldown-banner" class="w-full max-w-md mt-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs px-4 py-2 rounded-xl flex items-center justify-between hidden transition-all">
+                <span class="flex items-center gap-2 font-medium">
+                    <i class="fa-solid fa-circle-check text-emerald-600"></i> <span id="cooldown-text">¡Código capturado con éxito!</span>
+                </span>
+                <span id="cooldown-timer" class="font-bold text-emerald-700">2.5s</span>
+            </div>
+
             <!-- Botones de Control de Cámara -->
             <div class="flex flex-wrap gap-3 mt-5 w-full justify-center">
                 <button id="btn-start" onclick="startScanner()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 py-2.5 rounded-xl shadow transition duration-200 flex items-center gap-2">
@@ -225,8 +233,44 @@
         let activeTag = "Impresoras";
         let isScanningActive = false;
         
+        // Variables para control de Cooldown / Anti-rebote de lectura
+        let isCoolingDown = false;
+        let cooldownTimerInterval = null;
+        let lastScannedCode = null;
+        let lastScanTimestamp = 0;
+        const COOLDOWN_DURATION = 2500; // 2.5 segundos
+
         // Variable temporal para manejo de duplicados pendientes
         let pendingDuplicateItem = null;
+
+        // Web Audio API para beep de éxito sin archivos externos
+        let audioCtx = null;
+        function playSuccessBeep() {
+            try {
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(880, audioCtx.currentTime); // Nota A5
+                osc.frequency.exponentialRampToValueAtTime(1760, audioCtx.currentTime + 0.1);
+                
+                gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.15);
+            } catch (e) {
+                console.warn("Audio Context not supported or allowed yet", e);
+            }
+        }
 
         document.addEventListener('DOMContentLoaded', () => {
             loadFromLocalStorage();
@@ -405,11 +449,69 @@
                     <p class="text-sm">La cámara está apagada</p>
                 </div>
             `;
+            hideCooldownBanner();
         }
 
         function onScanSuccess(decodedText, decodedResult) {
+            const currentTime = Date.now();
+
+            // Sistema Estricto de Anti-Rebote / Cooldown (Evita lecturas fantasma múltiples seguidas)
+            if (isCoolingDown) {
+                return;
+            }
+
+            // Evitar procesar idéntico código si se acaba de escanear hace menos de 3.5 segundos
+            if (decodedText === lastScannedCode && (currentTime - lastScanTimestamp < 3500)) {
+                return;
+            }
+
+            lastScannedCode = decodedText;
+            lastScanTimestamp = currentTime;
+
+            // Activar Cooldown visual y de bloqueo temporal
+            triggerCooldown(decodedText);
+
+            // Audio y Vibración de confirmación
+            playSuccessBeep();
+            if (navigator.vibrate) {
+                navigator.vibrate([100, 50, 100]);
+            }
+
             const format = decodedResult?.result?.format?.formatName || "QR/Código";
             processCodeEntry(decodedText, format);
+        }
+
+        function triggerCooldown(codeText) {
+            isCoolingDown = true;
+            const banner = document.getElementById('scanner-cooldown-banner');
+            const timerEl = document.getElementById('cooldown-timer');
+            const textEl = document.getElementById('cooldown-text');
+            
+            textEl.textContent = `¡Código detectado: ${codeText.substring(0, 15)}...!`;
+            banner.classList.remove('hidden');
+
+            let timeLeft = COOLDOWN_DURATION;
+            const intervalStep = 100;
+
+            if (cooldownTimerInterval) clearInterval(cooldownTimerInterval);
+
+            cooldownTimerInterval = setInterval(() => {
+                timeLeft -= intervalStep;
+                let secondsDecimal = (timeLeft / 1000).toFixed(1);
+                timerEl.textContent = `${secondsDecimal}s`;
+
+                if (timeLeft <= 0) {
+                    clearInterval(cooldownTimerInterval);
+                    hideCooldownBanner();
+                    isCoolingDown = false;
+                }
+            }, intervalStep);
+        }
+
+        function hideCooldownBanner() {
+            const banner = document.getElementById('scanner-cooldown-banner');
+            banner.classList.add('hidden');
+            if (cooldownTimerInterval) clearInterval(cooldownTimerInterval);
         }
 
         function onScanFailure(error) {}
@@ -422,6 +524,9 @@
                 showToast("Escribe un código válido", "error");
                 return;
             }
+
+            playSuccessBeep();
+            if (navigator.vibrate) navigator.vibrate(100);
 
             processCodeEntry(text, "Manual");
             input.value = '';
@@ -447,8 +552,6 @@
                 document.getElementById('dup-tag-name').textContent = scanList[existingIndex].tag;
                 document.getElementById('dup-current-tag').textContent = activeTag;
                 document.getElementById('duplicate-modal').classList.remove('hidden');
-
-                if (navigator.vibrate) navigator.vibrate(200);
                 return;
             }
 
@@ -465,8 +568,6 @@
             saveToLocalStorage();
             renderList();
             showToast(`Registrado [${activeTag}]`);
-
-            if (navigator.vibrate) navigator.vibrate(100);
         }
 
         // Manejo de las opciones del modal de duplicados
