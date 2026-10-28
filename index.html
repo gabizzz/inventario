@@ -3,769 +3,480 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Escáner de Códigos QR y Barras con Etiquetas</title>
-    <!-- Tailwind CSS para diseño moderno y responsive -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- FontAwesome para iconos limpios -->
+    <title>Escáner de QR y Códigos de Barras</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Html5-Qrcode CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+    <!-- FontAwesome para iconos -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Librería html5-qrcode para el escaneo mediante cámara -->
-    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        #reader video {
-            object-fit: cover;
-            border-radius: 1rem;
+        .serial-text {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            letter-spacing: 0.05em;
         }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col justify-between">
+<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col">
 
     <!-- Header -->
-    <header class="bg-indigo-600 text-white shadow-md py-4 px-6 sticky top-0 z-40">
-        <div class="max-w-4xl mx-auto flex justify-between items-center">
+    <header class="bg-gray-800 border-b border-gray-700 shadow-md p-4 sticky top-0 z-50">
+        <div class="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
             <h1 class="text-xl font-bold flex items-center gap-2">
-                <i class="fa-solid fa-barcode text-indigo-200"></i> Inventario & Escáner
+                <i class="fa-solid fa-barcode text-indigo-400"></i> Escáner e Inventario
             </h1>
-            <div class="flex items-center gap-3">
-                <div class="text-right">
-                    <span id="badge-total-items" class="bg-indigo-500 text-xs px-3 py-1.5 rounded-full font-semibold shadow-inner inline-block">0 uds / 0 reg</span>
-                </div>
+            <!-- Contadores rápidos -->
+            <div class="flex items-center gap-3 bg-gray-900 px-4 py-2 rounded-xl border border-gray-700 text-sm">
+                <div>Total Registros: <span id="total-count" class="font-bold text-indigo-400">0</span></div>
+                <div class="h-4 w-px bg-gray-700"></div>
+                <div>Elementos Únicos: <span id="unique-count" class="font-bold text-emerald-400">0</span></div>
             </div>
         </div>
     </header>
 
-    <!-- Main Container -->
-    <main class="max-w-4xl w-full mx-auto p-4 md:p-6 flex-grow flex flex-col gap-6">
+    <!-- Main Content -->
+    <main class="max-w-4xl w-full mx-auto p-4 flex-grow flex flex-col gap-6">
 
-        <!-- Sección de Resumen y Etiquetas (Categorización) -->
-        <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-col gap-4">
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                <h2 class="text-base font-semibold text-slate-700 flex items-center gap-2">
-                    <i class="fa-solid fa-tags text-indigo-500"></i> Asignar Etiqueta Activa
-                </h2>
-                <div class="flex items-center gap-2 w-full sm:w-auto">
-                    <input type="text" id="new-tag-input" placeholder="Nueva etiqueta (ej. Impresoras)..." class="border border-slate-300 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 flex-grow sm:w-48">
-                    <button onclick="addNewTag()" class="bg-slate-800 hover:bg-slate-900 text-white text-xs font-medium px-3 py-2 rounded-xl transition flex items-center gap-1 shadow whitespace-nowrap">
-                        <i class="fa-solid fa-plus"></i> Crear Etiqueta
-                    </button>
-                </div>
-            </div>
-
-            <!-- Selector visual de Etiquetas -->
-            <div id="tag-selector-container" class="flex flex-wrap gap-2 pt-1">
-                <!-- Se llena dinámicamente -->
-            </div>
-
-            <!-- Panel de Desglose de Totales por Etiqueta -->
-            <div id="tag-summary-container" class="bg-slate-50 border border-slate-200/80 rounded-xl p-3 flex flex-wrap gap-2 text-xs text-slate-600 items-center">
-                <span class="font-semibold text-slate-700 mr-1"><i class="fa-solid fa-chart-pie text-indigo-500"></i> Desglose:</span>
-                <!-- Se llena dinámicamente -->
-            </div>
-        </section>
-
-        <!-- Sección de Entrada Manual por Teclado -->
-        <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-col gap-3">
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <h2 class="text-base font-semibold text-slate-700 flex items-center gap-2">
-                    <i class="fa-solid fa-keyboard text-indigo-500"></i> Ingreso Manual por Teclado
-                </h2>
-                <div class="flex items-center gap-2 w-full sm:w-auto">
-                    <input type="text" id="manual-input" placeholder="Escribe o pega el código..." class="border border-slate-300 rounded-xl px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 flex-grow sm:w-64">
-                    <button onclick="addManualCode()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-2 rounded-xl text-sm transition flex items-center gap-1.5 shadow whitespace-nowrap">
-                        <i class="fa-solid fa-plus"></i> Registrar
-                    </button>
-                </div>
-            </div>
-        </section>
-
-        <!-- Sección de Cámara y Controles -->
-        <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-col items-center">
-            <div class="w-full flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
-                <h2 class="text-base font-semibold text-slate-700 flex items-center gap-2">
-                    <i class="fa-solid fa-camera text-indigo-500"></i> Cámara Escáner Activa
-                </h2>
-                <div class="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
-                    <div class="flex items-center gap-2">
-                        <label for="camera-select" class="text-xs text-slate-500 font-medium">Cámara:</label>
-                        <select id="camera-select" class="border border-slate-300 rounded-lg px-2.5 py-1 text-xs bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                            <option value="environment">Trasera</option>
-                            <option value="user">Frontal</option>
+        <!-- Panel de Control y Configuración -->
+        <section class="bg-gray-800 p-5 rounded-2xl border border-gray-700 shadow-lg flex flex-col gap-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <!-- Selector de Etiqueta -->
+                <div class="flex flex-col gap-1.5">
+                    <label for="tag-select" class="text-sm font-medium text-gray-300">
+                        <i class="fa-solid fa-tag text-indigo-400 mr-1"></i> Asignar Etiqueta / Categoría:
+                    </label>
+                    <div class="flex gap-2">
+                        <select id="tag-select" class="bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500 flex-grow">
+                            <option value="Impresoras">Impresoras</option>
+                            <option value="Escáneres">Escáneres</option>
+                            <option value="Computadoras">Computadoras</option>
+                            <option value="Monitores">Monitores</option>
+                            <option value="Accesorios">Accesorios</option>
                         </select>
+                        <button onclick="addNewTag()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-xl text-sm transition font-medium" title="Añadir nueva categoría">
+                            <i class="fa-solid fa-plus"></i>
+                        </button>
                     </div>
-                    <div id="camera-status" class="text-xs px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 font-medium">Inactivo</div>
+                </div>
+
+                <!-- Selector de Cámara -->
+                <div class="flex flex-col gap-1.5">
+                    <label for="camera-select" class="text-sm font-medium text-gray-300">
+                        <i class="fa-solid fa-camera text-indigo-400 mr-1"></i> Cámara:
+                    </label>
+                    <select id="camera-select" class="bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500">
+                        <option value="">Cargando cámaras...</option>
+                    </select>
                 </div>
             </div>
 
-            <!-- Contenedor del lector QR/Barras -->
-            <div id="reader" class="w-full max-w-md bg-slate-900 rounded-2xl overflow-hidden shadow-inner min-h-[230px] flex items-center justify-center text-slate-400">
-                <div class="text-center p-6">
-                    <i class="fa-solid fa-video-slash text-3xl mb-2 text-slate-600"></i>
-                    <p class="text-sm">La cámara está apagada</p>
-                </div>
-            </div>
-
-            <!-- Banner indicador de Cooldown / Escaneo Bloqueado momentáneamente -->
-            <div id="scanner-cooldown-banner" class="w-full max-w-md mt-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs px-4 py-2 rounded-xl flex items-center justify-between hidden transition-all">
-                <span class="flex items-center gap-2 font-medium">
-                    <i class="fa-solid fa-circle-check text-emerald-600"></i> <span id="cooldown-text">¡Código capturado con éxito!</span>
-                </span>
-                <span id="cooldown-timer" class="font-bold text-emerald-700">2.5s</span>
-            </div>
-
-            <!-- Botones de Control de Cámara -->
-            <div class="flex flex-wrap gap-3 mt-5 w-full justify-center">
-                <button id="btn-start" onclick="startScanner()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 py-2.5 rounded-xl shadow transition duration-200 flex items-center gap-2">
+            <!-- Botones de Acción de Cámara y Manual -->
+            <div class="flex flex-wrap gap-3 pt-2 border-t border-gray-700">
+                <button id="btn-start" onclick="startScanner()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2.5 rounded-xl transition flex items-center gap-2 shadow-md">
                     <i class="fa-solid fa-play"></i> Iniciar Escáner
                 </button>
-                <button id="btn-stop" onclick="stopScanner()" disabled class="bg-slate-200 text-slate-400 font-medium px-5 py-2.5 rounded-xl transition duration-200 flex items-center gap-2 cursor-not-allowed">
+                <button id="btn-stop" onclick="stopScanner()" class="bg-rose-600 hover:bg-rose-500 text-white font-medium px-4 py-2.5 rounded-xl transition hidden flex items-center gap-2 shadow-md">
                     <i class="fa-solid fa-stop"></i> Detener Cámara
+                </button>
+                <button onclick="openManualModal()" class="bg-gray-700 hover:bg-gray-600 text-white font-medium px-4 py-2.5 rounded-xl transition flex items-center gap-2">
+                    <i class="fa-solid fa-keyboard"></i> Ingreso Manual
                 </button>
             </div>
         </section>
 
-        <!-- Sección de Lista y Acciones -->
-        <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-col flex-grow">
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-                <h2 class="text-base font-semibold text-slate-700 flex items-center gap-2">
-                    <i class="fa-solid fa-list-check text-indigo-500"></i> Registros Almacenados
+        <!-- Visor del Escáner (Oculto por defecto) -->
+        <section id="scanner-container-wrapper" class="hidden bg-gray-800 p-4 rounded-2xl border border-gray-700 shadow-lg flex flex-col items-center">
+            <div id="reader" class="w-full max-w-md rounded-xl overflow-hidden border border-gray-700"></div>
+            <p class="text-xs text-gray-400 mt-2 text-center">Apunta el código QR o de barras dentro del recuadro. (Tiene un filtro de lectura para evitar lecturas repetidas).</p>
+        </section>
+
+        <!-- Tabla de Registros -->
+        <section class="bg-gray-800 rounded-2xl border border-gray-700 shadow-lg flex flex-col overflow-hidden">
+            <div class="p-4 bg-gray-800/80 border-b border-gray-700 flex flex-col sm:flex-row justify-between items-center gap-3">
+                <h2 class="font-bold text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-list-check text-indigo-400"></i> Elementos Registrados
                 </h2>
-                
-                <!-- Botones de Exportar y Limpiar -->
-                <div class="flex flex-wrap gap-2 w-full sm:w-auto">
-                    <button onclick="exportCSV()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-3.5 py-2 rounded-xl shadow transition duration-200 flex items-center gap-1.5 flex-1 sm:flex-none justify-center">
-                        <i class="fa-solid fa-file-csv"></i> CSV
-                    </button>
-                    <button onclick="exportJSON()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-3.5 py-2 rounded-xl shadow transition duration-200 flex items-center gap-1.5 flex-1 sm:flex-none justify-center">
+                <!-- Botones de Exportación y Limpieza -->
+                <div class="flex flex-wrap gap-2">
+                    <button onclick="exportJSON()" class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
                         <i class="fa-solid fa-file-code"></i> JSON
                     </button>
-                    <button onclick="confirmClearList()" class="bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 text-sm font-medium px-3.5 py-2 rounded-xl transition duration-200 flex items-center gap-1.5 flex-1 sm:flex-none justify-center">
-                        <i class="fa-solid fa-trash-can"></i> Vaciar
+                    <button onclick="exportCSV()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-file-csv"></i> CSV
+                    </button>
+                    <button onclick="clearList()" class="bg-rose-600/80 hover:bg-rose-600 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-trash-can"></i> Limpiar
                     </button>
                 </div>
             </div>
 
-            <!-- Tabla de códigos -->
-            <div class="overflow-x-auto border border-slate-100 rounded-xl flex-grow">
+            <!-- Tabla Optimizada -->
+            <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse">
                     <thead>
-                        <tr class="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                            <th class="py-3 px-3">Código</th>
-                            <th class="py-3 px-3">Etiqueta</th>
-                            <th class="py-3 px-3 hidden sm:table-cell">Formato</th>
-                            <th class="py-3 px-3 text-center">Cant.</th>
-                            <th class="py-3 px-3">Fecha</th>
-                            <th class="py-3 px-3 text-right">Acción</th>
+                        <tr class="bg-gray-900/60 text-gray-400 text-xs uppercase tracking-wider border-b border-gray-700">
+                            <th class="py-3 px-4">Número de Serie</th>
+                            <th class="py-3 px-4">Etiqueta</th>
+                            <th class="py-3 px-4 text-center">Cant</th>
+                            <th class="py-3 px-4">Fecha y Hora</th>
+                            <th class="py-3 px-4 text-center">Acción</th>
                         </tr>
                     </thead>
-                    <tbody id="scan-list" class="divide-y divide-slate-100 text-sm">
-                        <!-- Elementos dinámicos -->
+                    <tbody id="items-table-body" class="divide-y divide-gray-700/50 text-sm">
+                        <!-- Se llena dinámicamente -->
                     </tbody>
                 </table>
             </div>
-
-            <!-- Estado vacío por defecto -->
-            <div id="empty-state" class="py-12 text-center text-slate-400">
-                <i class="fa-solid fa-box-open text-3xl mb-2 text-slate-300"></i>
-                <p class="text-sm">No hay códigos escaneados todavía.</p>
+            <!-- Estado Vacío -->
+            <div id="empty-state" class="p-8 text-center text-gray-400 hidden">
+                <i class="fa-solid fa-box-open text-4xl mb-2 text-gray-600"></i>
+                <p>No hay elementos registrados todavía.</p>
             </div>
         </section>
-
     </main>
 
-    <!-- Footer -->
-    <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-400">
-        Gestión de Inventario por Códigos &bull; Almacenamiento Local Seguro
-    </footer>
-
-    <!-- Notificación Toast -->
-    <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-20 opacity-0 transition-all duration-300 bg-slate-900 text-white text-sm px-4 py-3 rounded-xl shadow-lg flex items-center gap-3">
-        <i id="toast-icon" class="fa-solid fa-circle-check text-emerald-400"></i>
-        <span id="toast-message">Notificación</span>
-    </div>
-
-    <!-- Modal de Duplicado (Pregunta si desea incrementar cantidad) -->
-    <div id="duplicate-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl text-center space-y-4 border border-slate-100">
-            <div class="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto text-xl shadow-inner">
-                <i class="fa-solid fa-triangle-exclamation"></i>
+    <!-- Modal para Ingreso Manual -->
+    <div id="manual-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-gray-800 border border-gray-700 rounded-2xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4">
+            <h3 class="text-lg font-bold flex items-center gap-2">
+                <i class="fa-solid fa-keyboard text-indigo-400"></i> Ingresar Código Manualmente
+            </h3>
+            <div class="flex flex-col gap-1.5">
+                <label class="text-sm text-gray-300">Número de Serie / Código:</label>
+                <input type="text" id="manual-input-code" placeholder="Ej: 7501001300209" class="bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500 serial-text">
             </div>
-            <h3 class="font-bold text-lg text-slate-800">¡Código ya registrado!</h3>
-            <p id="duplicate-modal-text" class="text-xs text-slate-500 leading-relaxed">
-                Este código ya existe en el inventario bajo la etiqueta <strong id="dup-tag-name" class="text-slate-700"></strong>. ¿Qué deseas hacer?
-            </p>
-            <div class="flex flex-col gap-2 pt-2">
-                <button onclick="handleDuplicateAction('increment')" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-xl font-medium text-sm transition shadow">
-                    Incrementar Cantidad (+1)
-                </button>
-                <button onclick="handleDuplicateAction('update_tag')" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl font-medium text-sm transition">
-                    Actualizar a etiqueta actual (<span id="dup-current-tag"></span>)
-                </button>
-                <button onclick="closeDuplicateModal()" class="w-full bg-transparent hover:bg-slate-50 text-slate-400 py-2 rounded-xl font-medium text-xs transition">
-                    Cancelar / Omitir
-                </button>
+            <div class="flex justify-end gap-2 mt-2">
+                <button onclick="closeManualModal()" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-xl text-sm transition">Cancelar</button>
+                <button onclick="submitManualCode()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-sm transition font-medium">Registrar</button>
             </div>
         </div>
     </div>
 
-    <!-- Modal de confirmación para Vaciar Lista -->
-    <div id="confirm-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl text-center space-y-4">
-            <div class="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto text-xl">
-                <i class="fa-solid fa-trash-can"></i>
-            </div>
-            <h3 class="font-bold text-lg text-slate-800">¿Vaciar lista completa?</h3>
-            <p class="text-sm text-slate-500">Se eliminarán todos los registros almacenados localmente.</p>
-            <div class="flex gap-3 pt-2">
-                <button onclick="closeModal()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl font-medium transition">Cancelar</button>
-                <button onclick="clearList()" class="flex-1 bg-rose-600 hover:bg-rose-700 text-white py-2.5 rounded-xl font-medium transition">Sí, vaciar</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Lógica de la Aplicación -->
+    <!-- Script de Lógica -->
     <script>
         let html5QrCode = null;
-        let scanList = [];
-        let tagsList = ["Impresoras", "Escáneres", "Computadoras", "Monitores", "Accesorios", "Otros"];
-        let activeTag = "Impresoras";
-        let isScanningActive = false;
-        
-        // Variables para control de Cooldown / Anti-rebote de lectura
-        let isCoolingDown = false;
-        let cooldownTimerInterval = null;
+        let currentCameraId = null;
+        let items = [];
         let lastScannedCode = null;
-        let lastScanTimestamp = 0;
-        const COOLDOWN_DURATION = 2500; // 2.5 segundos
+        let lastScannedTime = 0;
+        const COOLDOWN_TIME = 2500; // 2.5 segundos para evitar múltiples lecturas rápidas del mismo código
 
-        // Variable temporal para manejo de duplicados pendientes
-        let pendingDuplicateItem = null;
+        // Colores suaves predeterminados según la etiqueta para variar levemente
+        const tagColors = {
+            "Impresoras": "bg-indigo-950/40 text-indigo-300 border-indigo-800/50",
+            "Escáneres": "bg-purple-950/40 text-purple-300 border-purple-800/50",
+            "Computadoras": "bg-blue-950/40 text-blue-300 border-blue-800/50",
+            "Monitores": "bg-emerald-950/40 text-emerald-300 border-emerald-800/50",
+            "Accesorios": "bg-amber-950/40 text-amber-300 border-amber-800/50"
+        };
 
-        // Web Audio API para beep de éxito sin archivos externos
-        let audioCtx = null;
-        function playSuccessBeep() {
+        function getTagStyle(tag) {
+            if (tagColors[tag]) return tagColors[tag];
+            // Color por defecto dinámico si se crea una nueva etiqueta personalizada
+            return "bg-gray-950/40 text-gray-300 border-gray-700/50";
+        }
+
+        // Sonido de éxito al escanear (Web Audio API)
+        function playSuccessSound() {
             try {
-                if (!audioCtx) {
-                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                }
-                if (audioCtx.state === 'suspended') {
-                    audioCtx.resume();
-                }
-                const osc = audioCtx.createOscillator();
-                const gain = audioCtx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(880, audioCtx.currentTime); // Nota A5
-                osc.frequency.exponentialRampToValueAtTime(1760, audioCtx.currentTime + 0.1);
-                
-                gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
-
-                osc.connect(gain);
-                gain.connect(audioCtx.destination);
-                
-                osc.start();
-                osc.stop(audioCtx.currentTime + 0.15);
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(587.33, audioCtx.currentTime); // Nota D5
+                oscillator.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.1); // A5
+                gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.15);
             } catch (e) {
-                console.warn("Audio Context not supported or allowed yet", e);
+                // Audio no soportado o bloqueado por el navegador
             }
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            loadFromLocalStorage();
-            renderTags();
-            renderList();
-
-            document.getElementById('manual-input').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    addManualCode();
-                }
-            });
-
-            document.getElementById('new-tag-input').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    addNewTag();
-                }
-            });
+        // Cargar datos al iniciar
+        window.addEventListener('DOMContentLoaded', () => {
+            const saved = localStorage.getItem('qr_inventory_items');
+            if (saved) {
+                try { items = JSON.parse(saved); } catch(e) { items = []; }
+            }
+            renderTable();
+            initCameras();
         });
 
-        // Cargar datos desde LocalStorage
-        function loadFromLocalStorage() {
-            const storedList = localStorage.getItem('scanned_inventory_list');
-            if (storedList) {
-                try {
-                    scanList = JSON.parse(storedList);
-                    scanList = scanList.map(item => ({
-                        ...item,
-                        quantity: item.quantity || 1,
-                        tag: item.tag || "Otros"
-                    }));
-                } catch (e) {
-                    scanList = [];
-                }
-            }
-
-            const storedTags = localStorage.getItem('inventory_custom_tags');
-            if (storedTags) {
-                try {
-                    tagsList = JSON.parse(storedTags);
-                } catch (e) {}
-            }
-
-            if (tagsList.length > 0 && !tagsList.includes(activeTag)) {
-                activeTag = tagsList[0];
-            }
-        }
-
-        function saveToLocalStorage() {
-            localStorage.setItem('scanned_inventory_list', JSON.stringify(scanList));
-            localStorage.setItem('inventory_custom_tags', JSON.stringify(tagsList));
-        }
-
-        // Renderizar botones de etiquetas
-        function renderTags() {
-            const container = document.getElementById('tag-selector-container');
-            let html = '';
-
-            tagsList.forEach(tag => {
-                const isActive = tag === activeTag;
-                const btnClass = isActive 
-                    ? "bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-300 font-semibold" 
-                    : "bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium";
-                
-                html += `
-                    <button onclick="setActiveTag('${tag}')" class="text-xs px-3.5 py-1.5 rounded-xl transition flex items-center gap-1.5 ${btnClass}">
-                        <i class="fa-solid fa-tag text-[10px] ${isActive ? 'text-indigo-200' : 'text-slate-400'}"></i> ${tag}
-                    </button>
-                `;
-            });
-
-            container.innerHTML = html;
-        }
-
-        function setActiveTag(tag) {
-            activeTag = tag;
-            renderTags();
-            showToast(`Etiqueta activa: ${tag}`);
-        }
-
-        // Agregar nueva etiqueta personalizada
-        function addNewTag() {
-            const input = document.getElementById('new-tag-input');
-            const newTag = input.value.trim();
-
-            if (!newTag) {
-                showToast("Escribe un nombre de etiqueta válido", "error");
-                return;
-            }
-
-            if (tagsList.includes(newTag)) {
-                showToast("Esta etiqueta ya existe", "error");
-                return;
-            }
-
-            tagsList.push(newTag);
-            activeTag = newTag;
-            input.value = '';
-            saveToLocalStorage();
-            renderTags();
-            showToast(`Etiqueta "${newTag}" creada y seleccionada`);
-        }
-
-        // Iniciar Escáner con cámara
-        function startScanner() {
-            const statusBadge = document.getElementById('camera-status');
-            const btnStart = document.getElementById('btn-start');
-            const btnStop = document.getElementById('btn-stop');
+        // Inicializar selector de cámaras
+        async function initCameras() {
             const cameraSelect = document.getElementById('camera-select');
-            
-            const facingMode = cameraSelect.value;
-
-            if (isScanningActive) {
-                stopScanner(() => initCamera(facingMode));
-                return;
-            }
-
-            initCamera(facingMode);
-        }
-
-        function initCamera(facingMode) {
-            const statusBadge = document.getElementById('camera-status');
-            const btnStart = document.getElementById('btn-start');
-            const btnStop = document.getElementById('btn-stop');
-
-            html5QrCode = new Html5Qrcode("reader");
-            const config = { fps: 10, qrbox: { width: 230, height: 230 } };
-
-            html5QrCode.start(
-                { facingMode: facingMode }, 
-                config,
-                onScanSuccess,
-                onScanFailure
-            ).then(() => {
-                isScanningActive = true;
-                statusBadge.textContent = "Activo";
-                statusBadge.className = "text-xs px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 font-medium";
-                btnStart.innerHTML = '<i class="fa-solid fa-rotate"></i> Cambiar Cámara';
-                btnStop.disabled = false;
-                btnStop.className = "bg-rose-600 hover:bg-rose-700 text-white font-medium px-5 py-2.5 rounded-xl shadow transition duration-200 flex items-center gap-2";
-            }).catch(err => {
-                console.error("Error al iniciar cámara:", err);
-                showToast("No se pudo acceder a la cámara o permisos denegados.", "error");
-            });
-        }
-
-        function stopScanner(callback) {
-            if (html5QrCode && html5QrCode.isScanning) {
-                html5QrCode.stop().then(() => {
-                    resetScannerUI();
-                    if (callback) callback();
-                }).catch(err => {
-                    resetScannerUI();
-                    if (callback) callback();
-                });
-            } else {
-                resetScannerUI();
-                if (callback) callback();
-            }
-        }
-
-        function resetScannerUI() {
-            isScanningActive = false;
-            const statusBadge = document.getElementById('camera-status');
-            const btnStart = document.getElementById('btn-start');
-            const btnStop = document.getElementById('btn-stop');
-
-            statusBadge.textContent = "Inactivo";
-            statusBadge.className = "text-xs px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 font-medium";
-            btnStart.innerHTML = '<i class="fa-solid fa-play"></i> Iniciar Escáner';
-            btnStop.disabled = true;
-            btnStop.className = "bg-slate-200 text-slate-400 font-medium px-5 py-2.5 rounded-xl cursor-not-allowed flex items-center gap-2";
-            
-            document.getElementById('reader').innerHTML = `
-                <div class="text-center p-6">
-                    <i class="fa-solid fa-video-slash text-3xl mb-2 text-slate-600"></i>
-                    <p class="text-sm">La cámara está apagada</p>
-                </div>
-            `;
-            hideCooldownBanner();
-        }
-
-        function onScanSuccess(decodedText, decodedResult) {
-            const currentTime = Date.now();
-
-            // Sistema Estricto de Anti-Rebote / Cooldown (Evita lecturas fantasma múltiples seguidas)
-            if (isCoolingDown) {
-                return;
-            }
-
-            // Evitar procesar idéntico código si se acaba de escanear hace menos de 3.5 segundos
-            if (decodedText === lastScannedCode && (currentTime - lastScanTimestamp < 3500)) {
-                return;
-            }
-
-            lastScannedCode = decodedText;
-            lastScanTimestamp = currentTime;
-
-            // Activar Cooldown visual y de bloqueo temporal
-            triggerCooldown(decodedText);
-
-            // Audio y Vibración de confirmación
-            playSuccessBeep();
-            if (navigator.vibrate) {
-                navigator.vibrate([100, 50, 100]);
-            }
-
-            const format = decodedResult?.result?.format?.formatName || "QR/Código";
-            processCodeEntry(decodedText, format);
-        }
-
-        function triggerCooldown(codeText) {
-            isCoolingDown = true;
-            const banner = document.getElementById('scanner-cooldown-banner');
-            const timerEl = document.getElementById('cooldown-timer');
-            const textEl = document.getElementById('cooldown-text');
-            
-            textEl.textContent = `¡Código detectado: ${codeText.substring(0, 15)}...!`;
-            banner.classList.remove('hidden');
-
-            let timeLeft = COOLDOWN_DURATION;
-            const intervalStep = 100;
-
-            if (cooldownTimerInterval) clearInterval(cooldownTimerInterval);
-
-            cooldownTimerInterval = setInterval(() => {
-                timeLeft -= intervalStep;
-                let secondsDecimal = (timeLeft / 1000).toFixed(1);
-                timerEl.textContent = `${secondsDecimal}s`;
-
-                if (timeLeft <= 0) {
-                    clearInterval(cooldownTimerInterval);
-                    hideCooldownBanner();
-                    isCoolingDown = false;
+            try {
+                const devices = await Html5Qrcode.getCameras();
+                if (devices && devices.length > 0) {
+                    cameraSelect.innerHTML = '';
+                    devices.forEach((device, index) => {
+                        const option = document.createElement('option');
+                        option.value = device.id;
+                        option.text = device.label || `Cámara ${index + 1}`;
+                        cameraSelect.appendChild(option);
+                    });
+                    currentCameraId = devices[0].id;
+                } else {
+                    cameraSelect.innerHTML = '<option value="">No se encontraron cámaras</option>';
                 }
-            }, intervalStep);
+            } catch (err) {
+                console.error("Error obteniendo cámaras", err);
+                cameraSelect.innerHTML = '<option value="">Error de permisos de cámara</option>';
+            }
         }
 
-        function hideCooldownBanner() {
-            const banner = document.getElementById('scanner-cooldown-banner');
-            banner.classList.add('hidden');
-            if (cooldownTimerInterval) clearInterval(cooldownTimerInterval);
-        }
-
-        function onScanFailure(error) {}
-
-        function addManualCode() {
-            const input = document.getElementById('manual-input');
-            const text = input.value.trim();
-
-            if (!text) {
-                showToast("Escribe un código válido", "error");
+        async function startScanner() {
+            const select = document.getElementById('camera-select');
+            const cameraId = select.value;
+            if (!cameraId) {
+                alert("Selecciona una cámara válida.");
                 return;
             }
 
-            playSuccessBeep();
+            document.getElementById('scanner-container-wrapper').classList.remove('hidden');
+            document.getElementById('btn-start').classList.add('hidden');
+            document.getElementById('btn-stop').classList.remove('hidden');
+
+            if (!html5QrCode) {
+                html5QrCode = new Html5Qrcode("reader");
+            }
+
+            try {
+                await html5QrCode.start(
+                    cameraId,
+                    { fps: 10, qrbox: { width: 250, height: 250 } },
+                    (decodedText) => {
+                        onCodeScanned(decodedText);
+                    },
+                    (errorMessage) => {
+                        // Errores de escaneo continuo por frame se pueden ignorar
+                    }
+                );
+            } catch (err) {
+                console.error("No se pudo iniciar la cámara", err);
+                stopScanner();
+                alert("No se pudo acceder a la cámara. Revisa los permisos del navegador.");
+            }
+        }
+
+        async function stopScanner() {
+            if (html5QrCode && html5QrCode.isScanning) {
+                try {
+                    await html5QrCode.stop();
+                } catch (err) {
+                    console.error("Error al detener", err);
+                }
+            }
+            document.getElementById('scanner-container-wrapper').classList.add('hidden');
+            document.getElementById('btn-start').classList.remove('hidden');
+            document.getElementById('btn-stop').classList.add('hidden');
+        }
+
+        // Lógica de registro con Cooldown Anti-repetición y no duplicados
+        function onCodeScanned(code) {
+            const now = Date.now();
+            if (code === lastScannedCode && (now - lastScannedTime < COOLDOWN_TIME)) {
+                return; // Ignorar lectura repetida muy cercana en el tiempo
+            }
+
+            lastScannedCode = code;
+            lastScannedTime = now;
+
+            playSuccessSound();
             if (navigator.vibrate) navigator.vibrate(100);
 
-            processCodeEntry(text, "Manual");
-            input.value = '';
+            processItemRegistration(code);
         }
 
-        // Lógica de validación y prevención de duplicados
-        function processCodeEntry(text, format) {
-            const now = new Date();
-            const timestamp = now.toLocaleDateString() + ' ' + now.toLocaleTimeString();
+        function processItemRegistration(code) {
+            const tagSelect = document.getElementById('tag-select');
+            const currentTag = tagSelect.value;
+            const nowStr = new Date().toLocaleString();
 
-            const existingIndex = scanList.findIndex(item => item.text === text);
+            // Buscar si ya existe el código de serie
+            const existingIndex = items.findIndex(item => item.code === code);
 
             if (existingIndex !== -1) {
-                // Guardamos referencia para el modal de decisión
-                pendingDuplicateItem = {
-                    index: existingIndex,
-                    text: text,
-                    format: format,
-                    timestamp: timestamp
-                };
-
-                // Mostrar modal interactivo de duplicado
-                document.getElementById('dup-tag-name').textContent = scanList[existingIndex].tag;
-                document.getElementById('dup-current-tag').textContent = activeTag;
-                document.getElementById('duplicate-modal').classList.remove('hidden');
-                return;
-            }
-
-            // Si no existe, agregar nuevo registro
-            scanList.unshift({
-                id: Date.now(),
-                text: text,
-                format: format,
-                tag: activeTag,
-                quantity: 1,
-                date: timestamp
-            });
-
-            saveToLocalStorage();
-            renderList();
-            showToast(`Registrado [${activeTag}]`);
-        }
-
-        // Manejo de las opciones del modal de duplicados
-        function handleDuplicateAction(action) {
-            if (!pendingDuplicateItem) return;
-
-            const idx = pendingDuplicateItem.index;
-
-            if (action === 'increment') {
-                scanList[idx].quantity += 1;
-                scanList[idx].date = pendingDuplicateItem.timestamp;
-                // Mover al inicio
-                const updated = scanList.splice(idx, 1)[0];
-                scanList.unshift(updated);
-                showToast(`Cantidad incrementada a ${scanList[0].quantity}`);
-            } else if (action === 'update_tag') {
-                scanList[idx].tag = activeTag;
-                scanList[idx].date = pendingDuplicateItem.timestamp;
-                const updated = scanList.splice(idx, 1)[0];
-                scanList.unshift(updated);
-                showToast(`Etiqueta actualizada a "${activeTag}"`);
-            }
-
-            saveToLocalStorage();
-            renderList();
-            closeDuplicateModal();
-        }
-
-        function closeDuplicateModal() {
-            document.getElementById('duplicate-modal').classList.add('hidden');
-            pendingDuplicateItem = null;
-        }
-
-        // Renderizar tabla y desgloses
-        function renderList() {
-            const tbody = document.getElementById('scan-list');
-            const emptyState = document.getElementById('empty-state');
-            const badgeTotalItems = document.getElementById('badge-total-items');
-            const tagSummaryContainer = document.getElementById('tag-summary-container');
-
-            // Calcular contadores
-            const totalRegistries = scanList.length;
-            const totalUnits = scanList.reduce((acc, item) => acc + item.quantity, 0);
-            badgeTotalItems.textContent = `${totalUnits} uds / ${totalRegistries} reg`;
-
-            // Calcular desglose por etiqueta
-            const breakdown = {};
-            scanList.forEach(item => {
-                breakdown[item.tag] = (breakdown[item.tag] || 0) + item.quantity;
-            });
-
-            let summaryHtml = `<span class="font-semibold text-slate-700 mr-1"><i class="fa-solid fa-chart-pie text-indigo-500"></i> Desglose:</span>`;
-            if (Object.keys(breakdown).length === 0) {
-                summaryHtml += `<span class="text-slate-400">Sin registros</span>`;
+                // Si ya existe, incrementar cantidad y actualizar fecha/etiqueta opcional
+                items[existingIndex].quantity = (items[existingIndex].quantity || 1) + 1;
+                items[existingIndex].date = nowStr;
+                items[existingIndex].tag = currentTag; // Actualiza a la etiqueta actual seleccionada
             } else {
-                for (const [tag, count] of Object.entries(breakdown)) {
-                    summaryHtml += `<span class="bg-white border border-slate-200 px-2 py-0.5 rounded-md shadow-2xs font-medium text-slate-700">${tag}: <strong class="text-indigo-600">${count}</strong></span>`;
-                }
+                // Nuevo elemento
+                items.unshift({
+                    code: code,
+                    tag: currentTag,
+                    quantity: 1,
+                    date: nowStr
+                });
             }
-            tagSummaryContainer.innerHTML = summaryHtml;
 
-            if (scanList.length === 0) {
-                tbody.innerHTML = '';
+            saveAndRender();
+        }
+
+        function saveAndRender() {
+            localStorage.setItem('qr_inventory_items', JSON.stringify(items));
+            renderTable();
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('items-table-body');
+            const emptyState = document.getElementById('empty-state');
+            const totalCountEl = document.getElementById('total-count');
+            const uniqueCountEl = document.getElementById('unique-count');
+
+            tbody.innerHTML = '';
+
+            if (items.length === 0) {
                 emptyState.classList.remove('hidden');
+                totalCountEl.textContent = '0';
+                uniqueCountEl.textContent = '0';
                 return;
             }
 
             emptyState.classList.add('hidden');
-            let html = '';
 
-            scanList.forEach(item => {
-                html += `
-                    <tr class="hover:bg-slate-50/80 transition">
-                        <td class="py-3 px-3 font-mono text-slate-700 break-all max-w-[150px] sm:max-w-xs">
-                            ${escapeHtml(item.text)}
-                        </td>
-                        <td class="py-3 px-3">
-                            <span class="bg-indigo-50 text-indigo-700 text-xs px-2.5 py-1 rounded-full font-medium border border-indigo-100">${escapeHtml(item.tag)}</span>
-                        </td>
-                        <td class="py-3 px-3 hidden sm:table-cell text-slate-500 text-xs font-medium">
-                            <span class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200">${item.format}</span>
-                        </td>
-                        <td class="py-3 px-3 text-center">
-                            <span class="bg-slate-100 text-slate-800 font-semibold px-2 py-0.5 rounded-md text-xs">${item.quantity}</span>
-                        </td>
-                        <td class="py-3 px-3 text-xs text-slate-400 whitespace-nowrap">
-                            ${item.date}
-                        </td>
-                        <td class="py-3 px-3 text-right">
-                            <button onclick="deleteItem(${item.id})" class="text-slate-400 hover:text-rose-600 p-2 rounded-lg transition" title="Eliminar">
-                                <i class="fa-solid fa-trash"></i>
-                            </button>
-                        </td>
-                    </tr>
+            let totalUnits = 0;
+            items.forEach((item, index) => {
+                totalUnits += (item.quantity || 1);
+                const tagClass = getTagStyle(item.tag);
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-gray-700/30 transition-colors";
+                tr.innerHTML = `
+                    <td class="py-3 px-4 serial-text font-semibold text-indigo-300">${escapeHtml(item.code)}</td>
+                    <td class="py-3 px-4">
+                        <span class="inline-block px-2.5 py-1 rounded-lg border text-xs font-medium ${tagClass}">${escapeHtml(item.tag)}</span>
+                    </td>
+                    <td class="py-3 px-4 text-center font-bold">${item.quantity || 1}</td>
+                    <td class="py-3 px-4 text-gray-400 text-xs">${escapeHtml(item.date)}</td>
+                    <td class="py-3 px-4 text-center">
+                        <button onclick="deleteItem(${index})" class="text-rose-400 hover:text-rose-300 p-1.5 rounded-lg hover:bg-rose-950/40 transition" title="Eliminar elemento">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </td>
                 `;
+                tbody.appendChild(tr);
             });
 
-            tbody.innerHTML = html;
+            totalCountEl.textContent = totalUnits;
+            uniqueCountEl.textContent = items.length;
         }
 
-        function deleteItem(id) {
-            scanList = scanList.filter(item => item.id !== id);
-            saveToLocalStorage();
-            renderList();
-            showToast("Registro eliminado");
-        }
-
-        function confirmClearList() {
-            if (scanList.length === 0) {
-                showToast("La lista ya está vacía", "error");
-                return;
+        function deleteItem(index) {
+            if (confirm("¿Estás seguro de eliminar este elemento?")) {
+                items.splice(index, 1);
+                saveAndRender();
             }
-            document.getElementById('confirm-modal').classList.remove('hidden');
-        }
-
-        function closeModal() {
-            document.getElementById('confirm-modal').classList.add('hidden');
         }
 
         function clearList() {
-            scanList = [];
-            saveToLocalStorage();
-            renderList();
-            closeModal();
-            showToast("Lista vaciada correctamente");
+            if (confirm("¿Vaciar toda la lista de registros? Esta acción no se puede deshacer.")) {
+                items = [];
+                saveAndRender();
+            }
         }
 
-        // Exportar a CSV
-        function exportCSV() {
-            if (scanList.length === 0) {
-                showToast("No hay datos para exportar", "error");
+        // Gestión de Etiquetas Nuevas
+        function addNewTag() {
+            const newTag = prompt("Ingresa el nombre de la nueva etiqueta (ej: Servidores, Teléfonos):");
+            if (newTag && newTag.trim() !== "") {
+                const formatted = newTag.trim();
+                const select = document.getElementById('tag-select');
+                
+                // Verificar si ya existe
+                let exists = false;
+                for (let i = 0; i < select.options.length; i++) {
+                    if (select.options[i].value.toLowerCase() === formatted.toLowerCase()) {
+                        exists = true;
+                        break;
+                    }
+                }
+
+                if (!exists) {
+                    const opt = document.createElement('option');
+                    opt.value = formatted;
+                    opt.textContent = formatted;
+                    select.appendChild(opt);
+                    select.value = formatted;
+                } else {
+                    select.value = formatted;
+                }
+            }
+        }
+
+        // Ingreso Manual
+        function openManualModal() {
+            document.getElementById('manual-input-code').value = '';
+            document.getElementById('manual-modal').classList.remove('hidden');
+            document.getElementById('manual-input-code').focus();
+        }
+
+        function closeManualModal() {
+            document.getElementById('manual-modal').classList.add('hidden');
+        }
+
+        function submitManualCode() {
+            const code = document.getElementById('manual-input-code').value.trim();
+            if (!code) {
+                alert("Por favor ingresa un número de serie o código válido.");
                 return;
             }
+            processItemRegistration(code);
+            closeManualModal();
+        }
 
-            let csvContent = "data:text/csv;charset=utf-8,ID,Codigo,Etiqueta,Formato,Cantidad,Fecha\r\n";
-            scanList.forEach(item => {
-                const cleanText = `"${item.text.replace(/"/g, '""')}"`;
-                const cleanTag = `"${item.tag.replace(/"/g, '""')}"`;
-                csvContent += `${item.id},${cleanText},${cleanTag},${item.format},${item.quantity},"${item.date}"\r\n`;
+        // Exportaciones
+        function exportJSON() {
+            if (items.length === 0) {
+                alert("No hay datos para exportar.");
+                return;
+            }
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(items, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", `inventario_${Date.now()}.json`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+        }
+
+        function exportCSV() {
+            if (items.length === 0) {
+                alert("No hay datos para exportar.");
+                return;
+            }
+            let csvContent = "data:text/csv;charset=utf-8,Serie,Etiqueta,Cantidad,Fecha\r\n";
+            items.forEach(item => {
+                const row = [
+                    `"${item.code.replace(/"/g, '""')}"`,
+                    `"${item.tag.replace(/"/g, '""')}"`,
+                    item.quantity || 1,
+                    `"${item.date.replace(/"/g, '""')}"`
+                ];
+                csvContent += row.join(",") + "\r\n";
             });
 
             const encodedUri = encodeURI(csvContent);
-            const link = document.createElement("a");
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", `inventario_etiquetado_${getFormattedDate()}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            showToast("Archivo CSV descargado");
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", encodedUri);
+            downloadAnchor.setAttribute("download", `inventario_${Date.now()}.csv`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
         }
 
-        // Exportar a JSON
-        function exportJSON() {
-            if (scanList.length === 0) {
-                showToast("No hay datos para exportar", "error");
-                return;
-            }
-
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(scanList, null, 2));
-            const link = document.createElement("a");
-            link.setAttribute("href", dataStr);
-            link.setAttribute("download", `inventario_etiquetado_${getFormattedDate()}.json`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            showToast("Archivo JSON descargado");
-        }
-
-        function getFormattedDate() {
-            const d = new Date();
-            return d.toISOString().slice(0, 10);
-        }
-
-        function escapeHtml(text) {
-            return text
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
-                .replace(/"/g, "&quot;")
-                .replace(/'/g, "&#039;");
-        }
-
-        function showToast(message, type = 'success') {
-            const toast = document.getElementById('toast');
-            const toastMessage = document.getElementById('toast-message');
-            const toastIcon = document.getElementById('toast-icon');
-
-            toastMessage.textContent = message;
-            if (type === 'error') {
-                toastIcon.className = "fa-solid fa-circle-exclamation text-rose-400";
-            } else {
-                toastIcon.className = "fa-solid fa-circle-check text-emerald-400";
-            }
-
-            toast.classList.remove('translate-y-20', 'opacity-0');
-            setTimeout(() => {
-                toast.classList.add('translate-y-20', 'opacity-0');
-            }, 3000);
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
         }
     </script>
 </body>
