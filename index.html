@@ -172,7 +172,6 @@
 
         function getTagStyle(tag) {
             if (tagColors[tag]) return tagColors[tag];
-            // Color por defecto dinámico si se crea una nueva etiqueta personalizada
             return "bg-gray-950/40 text-gray-300 border-gray-700/50";
         }
 
@@ -206,20 +205,32 @@
             initCameras();
         });
 
-        // Inicializar selector de cámaras
+        // Inicializar selector de cámaras priorizando la trasera
         async function initCameras() {
             const cameraSelect = document.getElementById('camera-select');
             try {
                 const devices = await Html5Qrcode.getCameras();
                 if (devices && devices.length > 0) {
                     cameraSelect.innerHTML = '';
+                    
+                    let backCameraId = devices[0].id; // Por defecto la primera
+
                     devices.forEach((device, index) => {
                         const option = document.createElement('option');
                         option.value = device.id;
                         option.text = device.label || `Cámara ${index + 1}`;
                         cameraSelect.appendChild(option);
+
+                        // Detectar si el nombre de la cámara indica que es la trasera (environment, back, trasera)
+                        const labelLower = (device.label || "").toLowerCase();
+                        if (labelLower.includes('back') || labelLower.includes('rear') || labelLower.includes('trasera') || labelLower.includes('environment')) {
+                            backCameraId = device.id;
+                        }
                     });
-                    currentCameraId = devices[0].id;
+
+                    // Seleccionar automáticamente la cámara trasera por defecto en el select
+                    cameraSelect.value = backCameraId;
+                    currentCameraId = backCameraId;
                 } else {
                     cameraSelect.innerHTML = '<option value="">No se encontraron cámaras</option>';
                 }
@@ -297,16 +308,13 @@
             const currentTag = tagSelect.value;
             const nowStr = new Date().toLocaleString();
 
-            // Buscar si ya existe el código de serie
             const existingIndex = items.findIndex(item => item.code === code);
 
             if (existingIndex !== -1) {
-                // Si ya existe, incrementar cantidad y actualizar fecha/etiqueta opcional
                 items[existingIndex].quantity = (items[existingIndex].quantity || 1) + 1;
                 items[existingIndex].date = nowStr;
-                items[existingIndex].tag = currentTag; // Actualiza a la etiqueta actual seleccionada
+                items[existingIndex].tag = currentTag;
             } else {
-                // Nuevo elemento
                 items.unshift({
                     code: code,
                     tag: currentTag,
@@ -388,7 +396,6 @@
                 const formatted = newTag.trim();
                 const select = document.getElementById('tag-select');
                 
-                // Verificar si ya existe
                 let exists = false;
                 for (let i = 0; i < select.options.length; i++) {
                     if (select.options[i].value.toLowerCase() === formatted.toLowerCase()) {
