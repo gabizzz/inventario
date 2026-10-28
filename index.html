@@ -72,7 +72,8 @@
                         <i class="fa-solid fa-camera text-indigo-400 mr-1"></i> Cámara:
                     </label>
                     <select id="camera-select" class="bg-gray-900 border border-gray-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500">
-                        <option value="">Cargando cámaras...</option>
+                        <option value="environment">Cámara Trasera (Predeterminada)</option>
+                        <option value="user">Cámara Frontal</option>
                     </select>
                 </div>
             </div>
@@ -143,7 +144,7 @@
             </div>
         </section>
 
-        <!-- Tabla de Registros Ampliada (Serie, GLPI ID, Etiqueta, Estado PDF, Cant, Fecha, Acción) -->
+        <!-- Tabla de Registros Ampliada -->
         <section class="bg-gray-800 rounded-2xl border border-gray-700 shadow-lg flex flex-col overflow-hidden">
             <div class="p-4 bg-gray-800/80 border-b border-gray-700 flex justify-between items-center">
                 <h2 class="font-bold text-lg flex items-center gap-2">
@@ -199,10 +200,9 @@
     <!-- Script de Lógica -->
     <script>
         let html5QrCode = null;
-        let currentCameraId = null;
         let items = [];
         let activeDetectedCode = null;
-        let pdfTextContent = ""; // Almacenará todo el texto extraído del PDF de recuento
+        let pdfTextContent = "";
 
         const tagColors = {
             "Impresoras": "bg-indigo-950/40 text-indigo-300 border-indigo-800/50",
@@ -240,60 +240,37 @@
                 try { items = JSON.parse(saved); } catch(e) { items = []; }
             }
             renderTable();
-            initCameras();
         });
 
-        async function initCameras() {
-            const cameraSelect = document.getElementById('camera-select');
-            try {
-                const devices = await Html5Qrcode.getCameras();
-                if (devices && devices.length > 0) {
-                    cameraSelect.innerHTML = '';
-                    let backCameraId = devices[0].id;
-
-                    devices.forEach((device, index) => {
-                        const option = document.createElement('option');
-                        option.value = device.id;
-                        option.text = device.label || `Cámara ${index + 1}`;
-                        cameraSelect.appendChild(option);
-
-                        const labelLower = (device.label || "").toLowerCase();
-                        if (labelLower.includes('back') || labelLower.includes('rear') || labelLower.includes('trasera') || labelLower.includes('environment')) {
-                            backCameraId = device.id;
-                        }
-                    });
-
-                    cameraSelect.value = backCameraId;
-                    currentCameraId = backCameraId;
-                } else {
-                    cameraSelect.innerHTML = '<option value="">No se encontraron cámaras</option>';
-                }
-            } catch (err) {
-                cameraSelect.innerHTML = '<option value="">Error de permisos de cámara</option>';
-            }
-        }
-
         async function startScanner() {
-            const select = document.getElementById('camera-select');
-            const cameraId = select.value;
-            if (!cameraId) { alert("Selecciona una cámara válida."); return; }
+            const cameraSelection = document.getElementById('camera-select').value;
 
             document.getElementById('scanner-container-wrapper').classList.remove('hidden');
             document.getElementById('btn-start').classList.add('hidden');
             document.getElementById('btn-stop').classList.remove('hidden');
 
-            if (!html5QrCode) { html5QrCode = new Html5Qrcode("reader"); }
+            if (!html5QrCode) { 
+                html5QrCode = new Html5Qrcode("reader"); 
+            }
 
             try {
+                // Si seleccionó 'environment' o 'user', se pasa directamente como restricción de video al navegador
+                const configConfig = { fps: 10, qrbox: { width: 250, height: 250 } };
+                let cameraConstraint = cameraSelection; 
+                if (cameraSelection === 'environment' || cameraSelection === 'user') {
+                    cameraConstraint = { facingMode: cameraSelection };
+                }
+
                 await html5QrCode.start(
-                    cameraId,
-                    { fps: 10, qrbox: { width: 250, height: 250 } },
+                    cameraConstraint,
+                    configConfig,
                     (decodedText) => { setDetectedCode(decodedText); },
                     (errorMessage) => {}
                 );
             } catch (err) {
+                console.error("Error al iniciar cámara:", err);
                 stopScanner();
-                alert("No se pudo acceder a la cámara.");
+                alert("No se pudo iniciar la cámara. Asegúrate de dar permisos de cámara en tu navegador.");
             }
         }
 
@@ -303,7 +280,6 @@
             }
             document.getElementById('scanner-container-wrapper').classList.add('hidden');
             document.getElementById('btn-start').classList.remove('hidden');
-            document.getElementById('btn-stop').classList.remove('hidden');
             document.getElementById('btn-stop').classList.add('hidden');
             clearDetectedCodeDisplay();
         }
@@ -356,7 +332,7 @@
             } else {
                 items.unshift({
                     code: code,
-                    glpiId: "", // Campo editable para GLPI ID
+                    glpiId: "",
                     tag: currentTag,
                     quantity: 1,
                     date: nowStr
@@ -376,7 +352,6 @@
             renderTable();
         }
 
-        // Lector de PDF de recuento de bienes con PDF.js
         async function loadPdfRecuento(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -399,9 +374,9 @@
                 }
 
                 pdfTextContent = fullText;
-                statusEl.textContent = `PDF cargado (${pdfDoc.numPages} pág). ¡Listo para machear!`;
+                statusEl.textContent = `PDF cargado (${pdfDoc.numPages} pág). ¡Listo!`;
                 statusEl.className = "text-xs text-emerald-400 mt-1 font-semibold";
-                renderTable(); // Recargar tabla para actualizar los checks del PDF
+                renderTable();
             } catch (err) {
                 console.error(err);
                 statusEl.textContent = "Error al leer el PDF";
@@ -409,18 +384,15 @@
             }
         }
 
-        // Verifica si la serie o el ID GLPI aparece en el texto del PDF
         function checkInPdf(code, glpiId) {
-            if (!pdfTextContent) return null; // No hay PDF cargado
+            if (!pdfTextContent) return null;
             const cleanCode = code.trim().toLowerCase();
             const cleanGlpi = glpiId ? glpiId.trim().toLowerCase() : "";
-            
             const textLower = pdfTextContent.toLowerCase();
             
             let found = false;
             if (cleanCode && textLower.includes(cleanCode)) found = true;
             if (cleanGlpi && textLower.includes(cleanGlpi)) found = true;
-
             return found;
         }
 
@@ -534,7 +506,6 @@
             closeManualModal();
         }
 
-        // Exportar e Importar robusto con Blob
         function exportJSON() {
             if (items.length === 0) { alert("No hay datos para exportar."); return; }
             const dataStr = JSON.stringify(items, null, 2);
@@ -558,12 +529,10 @@
                 try {
                     const importedData = JSON.parse(e.target.result);
                     if (Array.isArray(importedData)) {
-                        // Fusionar o reemplazar: aquí fusionamos evitando duplicados de serie
                         let addedCount = 0;
                         importedData.forEach(impItem => {
                             const existingIndex = items.findIndex(i => i.code === impItem.code);
                             if (existingIndex !== -1) {
-                                // Actualiza GLPI ID si viene informado
                                 if (impItem.glpiId) items[existingIndex].glpiId = impItem.glpiId;
                             } else {
                                 items.push(impItem);
@@ -571,14 +540,14 @@
                             }
                         });
                         saveAndRender();
-                        alert(`¡Importación exitosa! Se añadieron ${addedCount} elementos nuevos y se actualizaron los existentes.`);
+                        alert(`¡Importación exitosa! Se añadieron ${addedCount} elementos.`);
                     } else {
                         alert("El archivo JSON no tiene el formato correcto.");
                     }
                 } catch (err) {
                     alert("Error al parsear el archivo JSON.");
                 }
-                event.target.value = ""; // Reset input
+                event.target.value = "";
             };
             reader.readAsText(file);
         }
@@ -613,7 +582,7 @@
         function escapeHtml(str) {
             return String(str)
                 .replace(/&/g, '&amp;')
-                .replace(/<[/g, '&lt;')
+                .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#039;');
