@@ -84,10 +84,22 @@
             </div>
         </section>
 
-        <!-- Visor del Escáner (Oculto por defecto) -->
-        <section id="scanner-container-wrapper" class="hidden bg-gray-800 p-4 rounded-2xl border border-gray-700 shadow-lg flex flex-col items-center">
-            <div id="reader" class="w-full max-w-md rounded-xl overflow-hidden border border-gray-700"></div>
-            <p class="text-xs text-gray-400 mt-2 text-center">Apunta el código QR o de barras dentro del recuadro. (Tiene un filtro de lectura para evitar lecturas repetidas).</p>
+        <!-- Visor del Escáner (Oculto por defecto con Previsualización de Código y Botón de Confirmación) -->
+        <section id="scanner-container-wrapper" class="hidden bg-gray-800 p-4 rounded-2xl border border-gray-700 shadow-lg flex flex-col items-center gap-4">
+            <div id="reader" class="w-full max-w-md rounded-xl overflow-hidden border border-gray-700 relative"></div>
+            
+            <!-- Recuadro flotante de confirmación de lectura -->
+            <div class="w-full max-w-md bg-gray-900/90 border border-gray-700 p-3.5 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-inner">
+                <div class="flex flex-col overflow-hidden text-center sm:text-left w-full">
+                    <span class="text-xs text-gray-400 flex items-center justify-center sm:justify-start gap-1">
+                        <i class="fa-solid fa-eye text-indigo-400"></i> Código detectado:
+                    </span>
+                    <span id="detected-code-display" class="serial-text text-white font-bold text-base truncate mt-0.5">Ninguno (Apunta un código)</span>
+                </div>
+                <button id="btn-confirm-code" onclick="confirmDetectedCode()" disabled class="w-full sm:w-auto bg-gray-700 text-gray-400 font-medium px-4 py-2 rounded-lg transition flex items-center justify-center gap-1.5 cursor-not-allowed whitespace-nowrap">
+                    <i class="fa-solid fa-check"></i> Registrar
+                </button>
+            </div>
         </section>
 
         <!-- Tabla de Registros -->
@@ -157,11 +169,8 @@
         let html5QrCode = null;
         let currentCameraId = null;
         let items = [];
-        let lastScannedCode = null;
-        let lastScannedTime = 0;
-        const COOLDOWN_TIME = 2500; // 2.5 segundos para evitar múltiples lecturas rápidas del mismo código
+        let activeDetectedCode = null; // Código actualmente en vista para confirmar
 
-        // Colores suaves predeterminados según la etiqueta para variar levemente
         const tagColors = {
             "Impresoras": "bg-indigo-950/40 text-indigo-300 border-indigo-800/50",
             "Escáneres": "bg-purple-950/40 text-purple-300 border-purple-800/50",
@@ -175,27 +184,24 @@
             return "bg-gray-950/40 text-gray-300 border-gray-700/50";
         }
 
-        // Sonido de éxito al escanear (Web Audio API)
+        // Sonido de confirmación
         function playSuccessSound() {
             try {
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 const oscillator = audioCtx.createOscillator();
                 const gainNode = audioCtx.createGain();
                 oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(587.33, audioCtx.currentTime); // Nota D5
-                oscillator.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.1); // A5
+                oscillator.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.1);
                 gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
                 gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
                 oscillator.connect(gainNode);
                 gainNode.connect(audioCtx.destination);
                 oscillator.start();
                 oscillator.stop(audioCtx.currentTime + 0.15);
-            } catch (e) {
-                // Audio no soportado o bloqueado por el navegador
-            }
+            } catch (e) {}
         }
 
-        // Cargar datos al iniciar
         window.addEventListener('DOMContentLoaded', () => {
             const saved = localStorage.getItem('qr_inventory_items');
             if (saved) {
@@ -205,15 +211,13 @@
             initCameras();
         });
 
-        // Inicializar selector de cámaras priorizando la trasera
         async function initCameras() {
             const cameraSelect = document.getElementById('camera-select');
             try {
                 const devices = await Html5Qrcode.getCameras();
                 if (devices && devices.length > 0) {
                     cameraSelect.innerHTML = '';
-                    
-                    let backCameraId = devices[0].id; // Por defecto la primera
+                    let backCameraId = devices[0].id;
 
                     devices.forEach((device, index) => {
                         const option = document.createElement('option');
@@ -221,14 +225,12 @@
                         option.text = device.label || `Cámara ${index + 1}`;
                         cameraSelect.appendChild(option);
 
-                        // Detectar si el nombre de la cámara indica que es la trasera (environment, back, trasera)
                         const labelLower = (device.label || "").toLowerCase();
                         if (labelLower.includes('back') || labelLower.includes('rear') || labelLower.includes('trasera') || labelLower.includes('environment')) {
                             backCameraId = device.id;
                         }
                     });
 
-                    // Seleccionar automáticamente la cámara trasera por defecto en el select
                     cameraSelect.value = backCameraId;
                     currentCameraId = backCameraId;
                 } else {
@@ -261,11 +263,10 @@
                     cameraId,
                     { fps: 10, qrbox: { width: 250, height: 250 } },
                     (decodedText) => {
-                        onCodeScanned(decodedText);
+                        // Muestra el código en tiempo real en la barra inferior sin registrarlo aún
+                        setDetectedCode(decodedText);
                     },
-                    (errorMessage) => {
-                        // Errores de escaneo continuo por frame se pueden ignorar
-                    }
+                    (errorMessage) => {}
                 );
             } catch (err) {
                 console.error("No se pudo iniciar la cámara", err);
@@ -278,29 +279,51 @@
             if (html5QrCode && html5QrCode.isScanning) {
                 try {
                     await html5QrCode.stop();
-                } catch (err) {
-                    console.error("Error al detener", err);
-                }
+                } catch (err) {}
             }
             document.getElementById('scanner-container-wrapper').classList.add('hidden');
             document.getElementById('btn-start').classList.remove('hidden');
             document.getElementById('btn-stop').classList.add('hidden');
+            clearDetectedCodeDisplay();
         }
 
-        // Lógica de registro con Cooldown Anti-repetición y no duplicados
-        function onCodeScanned(code) {
-            const now = Date.now();
-            if (code === lastScannedCode && (now - lastScannedTime < COOLDOWN_TIME)) {
-                return; // Ignorar lectura repetida muy cercana en el tiempo
-            }
+        function setDetectedCode(code) {
+            activeDetectedCode = code;
+            const display = document.getElementById('detected-code-display');
+            const btnConfirm = document.getElementById('btn-confirm-code');
 
-            lastScannedCode = code;
-            lastScannedTime = now;
+            display.textContent = code;
+            display.classList.remove('text-gray-400');
+            display.classList.add('text-white');
+
+            btnConfirm.disabled = false;
+            btnConfirm.className = "w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap shadow-md";
+        }
+
+        function clearDetectedCodeDisplay() {
+            activeDetectedCode = null;
+            const display = document.getElementById('detected-code-display');
+            const btnConfirm = document.getElementById('btn-confirm-code');
+
+            display.textContent = "Ninguno (Apunta un código)";
+            display.classList.remove('text-white');
+            display.classList.add('text-gray-400');
+
+            btnConfirm.disabled = true;
+            btnConfirm.className = "w-full sm:w-auto bg-gray-700 text-gray-400 font-medium px-4 py-2 rounded-lg transition flex items-center justify-center gap-1.5 cursor-not-allowed whitespace-nowrap";
+        }
+
+        // El usuario confirma y almacena el código que tiene en pantalla
+        function confirmDetectedCode() {
+            if (!activeDetectedCode) return;
 
             playSuccessSound();
             if (navigator.vibrate) navigator.vibrate(100);
 
-            processItemRegistration(code);
+            processItemRegistration(activeDetectedCode);
+            
+            // Opcional: limpiar la visualización temporal para enfocar el siguiente
+            clearDetectedCodeDisplay();
         }
 
         function processItemRegistration(code) {
@@ -389,7 +412,6 @@
             }
         }
 
-        // Gestión de Etiquetas Nuevas
         function addNewTag() {
             const newTag = prompt("Ingresa el nombre de la nueva etiqueta (ej: Servidores, Teléfonos):");
             if (newTag && newTag.trim() !== "") {
@@ -416,7 +438,6 @@
             }
         }
 
-        // Ingreso Manual
         function openManualModal() {
             document.getElementById('manual-input-code').value = '';
             document.getElementById('manual-modal').classList.remove('hidden');
@@ -437,7 +458,6 @@
             closeManualModal();
         }
 
-        // Exportaciones
         function exportJSON() {
             if (items.length === 0) {
                 alert("No hay datos para exportar.");
