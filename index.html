@@ -3,11 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Escáner de QR y Códigos de Barras</title>
+    <title>Escáner e Inventario - GLPI & PDF Matcher</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <!-- Html5-Qrcode CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+    <!-- PDF.js para leer archivos PDF de recuento -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
     <!-- FontAwesome para iconos -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -21,21 +26,23 @@
 
     <!-- Header -->
     <header class="bg-gray-800 border-b border-gray-700 shadow-md p-4 sticky top-0 z-50">
-        <div class="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
+        <div class="max-w-5xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
             <h1 class="text-xl font-bold flex items-center gap-2">
-                <i class="fa-solid fa-barcode text-indigo-400"></i> Escáner e Inventario
+                <i class="fa-solid fa-barcode text-indigo-400"></i> Inventario, GLPI & PDF Matcher
             </h1>
             <!-- Contadores rápidos -->
             <div class="flex items-center gap-3 bg-gray-900 px-4 py-2 rounded-xl border border-gray-700 text-sm">
-                <div>Total Registros: <span id="total-count" class="font-bold text-indigo-400">0</span></div>
+                <div>Total: <span id="total-count" class="font-bold text-indigo-400">0</span></div>
                 <div class="h-4 w-px bg-gray-700"></div>
-                <div>Elementos Únicos: <span id="unique-count" class="font-bold text-emerald-400">0</span></div>
+                <div>Únicos: <span id="unique-count" class="font-bold text-emerald-400">0</span></div>
+                <div class="h-4 w-px bg-gray-700"></div>
+                <div>En PDF: <span id="pdf-matched-count" class="font-bold text-amber-400">0</span></div>
             </div>
         </div>
     </header>
 
     <!-- Main Content -->
-    <main class="max-w-4xl w-full mx-auto p-4 flex-grow flex flex-col gap-6">
+    <main class="max-w-5xl w-full mx-auto p-4 flex-grow flex flex-col gap-6">
 
         <!-- Panel de Control y Configuración -->
         <section class="bg-gray-800 p-5 rounded-2xl border border-gray-700 shadow-lg flex flex-col gap-4">
@@ -84,11 +91,10 @@
             </div>
         </section>
 
-        <!-- Visor del Escáner (Oculto por defecto con Previsualización de Código y Botón de Confirmación) -->
+        <!-- Visor del Escáner -->
         <section id="scanner-container-wrapper" class="hidden bg-gray-800 p-4 rounded-2xl border border-gray-700 shadow-lg flex flex-col items-center gap-4">
             <div id="reader" class="w-full max-w-md rounded-xl overflow-hidden border border-gray-700 relative"></div>
             
-            <!-- Recuadro flotante de confirmación de lectura -->
             <div class="w-full max-w-md bg-gray-900/90 border border-gray-700 p-3.5 rounded-xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-inner">
                 <div class="flex flex-col overflow-hidden text-center sm:text-left w-full">
                     <span class="text-xs text-gray-400 flex items-center justify-center sm:justify-start gap-1">
@@ -102,35 +108,62 @@
             </div>
         </section>
 
-        <!-- Tabla de Registros -->
-        <section class="bg-gray-800 rounded-2xl border border-gray-700 shadow-lg flex flex-col overflow-hidden">
-            <div class="p-4 bg-gray-800/80 border-b border-gray-700 flex flex-col sm:flex-row justify-between items-center gap-3">
-                <h2 class="font-bold text-lg flex items-center gap-2">
-                    <i class="fa-solid fa-list-check text-indigo-400"></i> Elementos Registrados
-                </h2>
-                <!-- Botones de Exportación y Limpieza -->
-                <div class="flex flex-wrap gap-2">
-                    <button onclick="exportJSON()" class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
-                        <i class="fa-solid fa-file-code"></i> JSON
-                    </button>
-                    <button onclick="exportCSV()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
-                        <i class="fa-solid fa-file-csv"></i> CSV
-                    </button>
-                    <button onclick="clearList()" class="bg-rose-600/80 hover:bg-rose-600 text-white text-sm font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
-                        <i class="fa-solid fa-trash-can"></i> Limpiar
-                    </button>
+        <!-- Panel de Sincronización / Cruce con PDF y GLPI -->
+        <section class="bg-gray-800 p-4 rounded-2xl border border-gray-700 shadow-lg flex flex-col gap-4">
+            <h2 class="font-bold text-md flex items-center gap-2 text-indigo-300">
+                <i class="fa-solid fa-file-pdf text-rose-400"></i> Verificación con PDF de Recuento & Sincronización
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <!-- Carga de PDF -->
+                <div class="flex flex-col gap-1 bg-gray-900/50 p-3 rounded-xl border border-gray-700/60">
+                    <label class="text-xs font-medium text-gray-300">1. Cargar PDF de Bienes:</label>
+                    <input type="file" id="pdf-file-input" accept=".pdf" onchange="loadPdfRecuento(event)" class="text-xs text-gray-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500 cursor-pointer">
+                    <span id="pdf-status" class="text-xs text-gray-500 mt-1">Ningún PDF cargado</span>
+                </div>
+
+                <!-- Importar / Sincronizar de otro equipo -->
+                <div class="flex flex-col gap-1 bg-gray-900/50 p-3 rounded-xl border border-gray-700/60">
+                    <label class="text-xs font-medium text-gray-300">2. Importar Inventario (JSON):</label>
+                    <input type="file" id="json-file-input" accept=".json" onchange="importJSON(event)" class="text-xs text-gray-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer">
+                    <span class="text-xs text-gray-500 mt-1">Fusiona datos de otra terminal</span>
+                </div>
+
+                <!-- Exportaciones -->
+                <div class="flex flex-col gap-1 bg-gray-900/50 p-3 rounded-xl border border-gray-700/60 justify-between">
+                    <label class="text-xs font-medium text-gray-300">3. Exportar Datos:</label>
+                    <div class="flex gap-2">
+                        <button onclick="exportJSON()" class="flex-grow bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium py-1.5 px-2 rounded-lg transition flex items-center justify-center gap-1">
+                            <i class="fa-solid fa-file-code"></i> JSON
+                        </button>
+                        <button onclick="exportCSV()" class="flex-grow bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium py-1.5 px-2 rounded-lg transition flex items-center justify-center gap-1">
+                            <i class="fa-solid fa-file-csv"></i> CSV (Excel)
+                        </button>
+                    </div>
                 </div>
             </div>
+        </section>
 
-            <!-- Tabla Optimizada -->
+        <!-- Tabla de Registros Ampliada (Serie, GLPI ID, Etiqueta, Estado PDF, Cant, Fecha, Acción) -->
+        <section class="bg-gray-800 rounded-2xl border border-gray-700 shadow-lg flex flex-col overflow-hidden">
+            <div class="p-4 bg-gray-800/80 border-b border-gray-700 flex justify-between items-center">
+                <h2 class="font-bold text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-list-check text-indigo-400"></i> Elementos Registrados & IDs GLPI
+                </h2>
+                <button onclick="clearList()" class="bg-rose-600/80 hover:bg-rose-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-trash-can"></i> Vaciar Todo
+                </button>
+            </div>
+
             <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse">
                     <thead>
                         <tr class="bg-gray-900/60 text-gray-400 text-xs uppercase tracking-wider border-b border-gray-700">
                             <th class="py-3 px-4">Número de Serie</th>
+                            <th class="py-3 px-4">ID GLPI / Activo</th>
                             <th class="py-3 px-4">Etiqueta</th>
+                            <th class="py-3 px-4 text-center">En PDF Recuento</th>
                             <th class="py-3 px-4 text-center">Cant</th>
-                            <th class="py-3 px-4">Fecha y Hora</th>
+                            <th class="py-3 px-4">Fecha</th>
                             <th class="py-3 px-4 text-center">Acción</th>
                         </tr>
                     </thead>
@@ -139,7 +172,6 @@
                     </tbody>
                 </table>
             </div>
-            <!-- Estado Vacío -->
             <div id="empty-state" class="p-8 text-center text-gray-400 hidden">
                 <i class="fa-solid fa-box-open text-4xl mb-2 text-gray-600"></i>
                 <p>No hay elementos registrados todavía.</p>
@@ -169,7 +201,8 @@
         let html5QrCode = null;
         let currentCameraId = null;
         let items = [];
-        let activeDetectedCode = null; // Código actualmente en vista para confirmar
+        let activeDetectedCode = null;
+        let pdfTextContent = ""; // Almacenará todo el texto extraído del PDF de recuento
 
         const tagColors = {
             "Impresoras": "bg-indigo-950/40 text-indigo-300 border-indigo-800/50",
@@ -184,7 +217,6 @@
             return "bg-gray-950/40 text-gray-300 border-gray-700/50";
         }
 
-        // Sonido de confirmación
         function playSuccessSound() {
             try {
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -203,7 +235,7 @@
         }
 
         window.addEventListener('DOMContentLoaded', () => {
-            const saved = localStorage.getItem('qr_inventory_items');
+            const saved = localStorage.getItem('qr_inventory_items_glpi');
             if (saved) {
                 try { items = JSON.parse(saved); } catch(e) { items = []; }
             }
@@ -237,7 +269,6 @@
                     cameraSelect.innerHTML = '<option value="">No se encontraron cámaras</option>';
                 }
             } catch (err) {
-                console.error("Error obteniendo cámaras", err);
                 cameraSelect.innerHTML = '<option value="">Error de permisos de cámara</option>';
             }
         }
@@ -245,44 +276,34 @@
         async function startScanner() {
             const select = document.getElementById('camera-select');
             const cameraId = select.value;
-            if (!cameraId) {
-                alert("Selecciona una cámara válida.");
-                return;
-            }
+            if (!cameraId) { alert("Selecciona una cámara válida."); return; }
 
             document.getElementById('scanner-container-wrapper').classList.remove('hidden');
             document.getElementById('btn-start').classList.add('hidden');
             document.getElementById('btn-stop').classList.remove('hidden');
 
-            if (!html5QrCode) {
-                html5QrCode = new Html5Qrcode("reader");
-            }
+            if (!html5QrCode) { html5QrCode = new Html5Qrcode("reader"); }
 
             try {
                 await html5QrCode.start(
                     cameraId,
                     { fps: 10, qrbox: { width: 250, height: 250 } },
-                    (decodedText) => {
-                        // Muestra el código en tiempo real en la barra inferior sin registrarlo aún
-                        setDetectedCode(decodedText);
-                    },
+                    (decodedText) => { setDetectedCode(decodedText); },
                     (errorMessage) => {}
                 );
             } catch (err) {
-                console.error("No se pudo iniciar la cámara", err);
                 stopScanner();
-                alert("No se pudo acceder a la cámara. Revisa los permisos del navegador.");
+                alert("No se pudo acceder a la cámara.");
             }
         }
 
         async function stopScanner() {
             if (html5QrCode && html5QrCode.isScanning) {
-                try {
-                    await html5QrCode.stop();
-                } catch (err) {}
+                try { await html5QrCode.stop(); } catch (err) {}
             }
             document.getElementById('scanner-container-wrapper').classList.add('hidden');
             document.getElementById('btn-start').classList.remove('hidden');
+            document.getElementById('btn-stop').classList.remove('hidden');
             document.getElementById('btn-stop').classList.add('hidden');
             clearDetectedCodeDisplay();
         }
@@ -313,16 +334,11 @@
             btnConfirm.className = "w-full sm:w-auto bg-gray-700 text-gray-400 font-medium px-4 py-2 rounded-lg transition flex items-center justify-center gap-1.5 cursor-not-allowed whitespace-nowrap";
         }
 
-        // El usuario confirma y almacena el código que tiene en pantalla
         function confirmDetectedCode() {
             if (!activeDetectedCode) return;
-
             playSuccessSound();
             if (navigator.vibrate) navigator.vibrate(100);
-
             processItemRegistration(activeDetectedCode);
-            
-            // Opcional: limpiar la visualización temporal para enfocar el siguiente
             clearDetectedCodeDisplay();
         }
 
@@ -340,6 +356,7 @@
             } else {
                 items.unshift({
                     code: code,
+                    glpiId: "", // Campo editable para GLPI ID
                     tag: currentTag,
                     quantity: 1,
                     date: nowStr
@@ -349,9 +366,62 @@
             saveAndRender();
         }
 
+        function updateGlpiId(index, value) {
+            items[index].glpiId = value.trim();
+            localStorage.setItem('qr_inventory_items_glpi', JSON.stringify(items));
+        }
+
         function saveAndRender() {
-            localStorage.setItem('qr_inventory_items', JSON.stringify(items));
+            localStorage.setItem('qr_inventory_items_glpi', JSON.stringify(items));
             renderTable();
+        }
+
+        // Lector de PDF de recuento de bienes con PDF.js
+        async function loadPdfRecuento(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const statusEl = document.getElementById('pdf-status');
+            statusEl.textContent = "Leyendo PDF...";
+            pdfTextContent = "";
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+                const pdfDoc = await loadingTask.promise;
+                
+                let fullText = "";
+                for (let i = 1; i <= pdfDoc.numPages; i++) {
+                    const page = await pdfDoc.getPage(i);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map(item => item.str).join(" ");
+                    fullText += " " + pageText;
+                }
+
+                pdfTextContent = fullText;
+                statusEl.textContent = `PDF cargado (${pdfDoc.numPages} pág). ¡Listo para machear!`;
+                statusEl.className = "text-xs text-emerald-400 mt-1 font-semibold";
+                renderTable(); // Recargar tabla para actualizar los checks del PDF
+            } catch (err) {
+                console.error(err);
+                statusEl.textContent = "Error al leer el PDF";
+                statusEl.className = "text-xs text-rose-400 mt-1";
+            }
+        }
+
+        // Verifica si la serie o el ID GLPI aparece en el texto del PDF
+        function checkInPdf(code, glpiId) {
+            if (!pdfTextContent) return null; // No hay PDF cargado
+            const cleanCode = code.trim().toLowerCase();
+            const cleanGlpi = glpiId ? glpiId.trim().toLowerCase() : "";
+            
+            const textLower = pdfTextContent.toLowerCase();
+            
+            let found = false;
+            if (cleanCode && textLower.includes(cleanCode)) found = true;
+            if (cleanGlpi && textLower.includes(cleanGlpi)) found = true;
+
+            return found;
         }
 
         function renderTable() {
@@ -359,6 +429,7 @@
             const emptyState = document.getElementById('empty-state');
             const totalCountEl = document.getElementById('total-count');
             const uniqueCountEl = document.getElementById('unique-count');
+            const pdfMatchedEl = document.getElementById('pdf-matched-count');
 
             tbody.innerHTML = '';
 
@@ -366,27 +437,46 @@
                 emptyState.classList.remove('hidden');
                 totalCountEl.textContent = '0';
                 uniqueCountEl.textContent = '0';
+                pdfMatchedEl.textContent = '0';
                 return;
             }
 
             emptyState.classList.add('hidden');
 
             let totalUnits = 0;
+            let matchedInPdfCount = 0;
+
             items.forEach((item, index) => {
                 totalUnits += (item.quantity || 1);
                 const tagClass = getTagStyle(item.tag);
+                
+                const inPdf = checkInPdf(item.code, item.glpiId);
+                if (inPdf === true) matchedInPdfCount++;
+
+                let pdfBadge = `<span class="text-gray-500 text-xs italic">Sin PDF cargado</span>`;
+                if (pdfTextContent) {
+                    if (inPdf) {
+                        pdfBadge = `<span class="bg-emerald-950/60 text-emerald-300 border border-emerald-800 px-2 py-1 rounded-md text-xs font-semibold flex items-center justify-center gap-1"><i class="fa-solid fa-circle-check"></i> Encontrado</span>`;
+                    } else {
+                        pdfBadge = `<span class="bg-rose-950/60 text-rose-300 border border-rose-800 px-2 py-1 rounded-md text-xs font-semibold flex items-center justify-center gap-1"><i class="fa-solid fa-triangle-exclamation"></i> No está</span>`;
+                    }
+                }
 
                 const tr = document.createElement('tr');
                 tr.className = "hover:bg-gray-700/30 transition-colors";
                 tr.innerHTML = `
                     <td class="py-3 px-4 serial-text font-semibold text-indigo-300">${escapeHtml(item.code)}</td>
                     <td class="py-3 px-4">
+                        <input type="text" value="${escapeHtml(item.glpiId || '')}" onchange="updateGlpiId(${index}, this.value)" placeholder="ID GLPI..." class="bg-gray-900 border border-gray-700 rounded-lg px-2.5 py-1 text-white text-xs w-32 focus:outline-none focus:border-indigo-500 serial-text">
+                    </td>
+                    <td class="py-3 px-4">
                         <span class="inline-block px-2.5 py-1 rounded-lg border text-xs font-medium ${tagClass}">${escapeHtml(item.tag)}</span>
                     </td>
+                    <td class="py-3 px-4 text-center">${pdfBadge}</td>
                     <td class="py-3 px-4 text-center font-bold">${item.quantity || 1}</td>
                     <td class="py-3 px-4 text-gray-400 text-xs">${escapeHtml(item.date)}</td>
                     <td class="py-3 px-4 text-center">
-                        <button onclick="deleteItem(${index})" class="text-rose-400 hover:text-rose-300 p-1.5 rounded-lg hover:bg-rose-950/40 transition" title="Eliminar elemento">
+                        <button onclick="deleteItem(${index})" class="text-rose-400 hover:text-rose-300 p-1.5 rounded-lg hover:bg-rose-950/40 transition" title="Eliminar">
                             <i class="fa-solid fa-trash"></i>
                         </button>
                     </td>
@@ -396,6 +486,7 @@
 
             totalCountEl.textContent = totalUnits;
             uniqueCountEl.textContent = items.length;
+            pdfMatchedEl.textContent = matchedInPdfCount;
         }
 
         function deleteItem(index) {
@@ -406,35 +497,25 @@
         }
 
         function clearList() {
-            if (confirm("¿Vaciar toda la lista de registros? Esta acción no se puede deshacer.")) {
+            if (confirm("¿Vaciar toda la lista?")) {
                 items = [];
                 saveAndRender();
             }
         }
 
         function addNewTag() {
-            const newTag = prompt("Ingresa el nombre de la nueva etiqueta (ej: Servidores, Teléfonos):");
+            const newTag = prompt("Ingresa el nombre de la nueva etiqueta:");
             if (newTag && newTag.trim() !== "") {
                 const formatted = newTag.trim();
                 const select = document.getElementById('tag-select');
-                
-                let exists = false;
-                for (let i = 0; i < select.options.length; i++) {
-                    if (select.options[i].value.toLowerCase() === formatted.toLowerCase()) {
-                        exists = true;
-                        break;
-                    }
-                }
-
+                let exists = Array.from(select.options).some(opt => opt.value.toLowerCase() === formatted.toLowerCase());
                 if (!exists) {
                     const opt = document.createElement('option');
                     opt.value = formatted;
                     opt.textContent = formatted;
                     select.appendChild(opt);
-                    select.value = formatted;
-                } else {
-                    select.value = formatted;
                 }
+                select.value = formatted;
             }
         }
 
@@ -444,63 +525,95 @@
             document.getElementById('manual-input-code').focus();
         }
 
-        function closeManualModal() {
-            document.getElementById('manual-modal').classList.add('hidden');
-        }
+        function closeManualModal() { document.getElementById('manual-modal').classList.add('hidden'); }
 
         function submitManualCode() {
             const code = document.getElementById('manual-input-code').value.trim();
-            if (!code) {
-                alert("Por favor ingresa un número de serie o código válido.");
-                return;
-            }
+            if (!code) { alert("Ingresa un código válido."); return; }
             processItemRegistration(code);
             closeManualModal();
         }
 
+        // Exportar e Importar robusto con Blob
         function exportJSON() {
-            if (items.length === 0) {
-                alert("No hay datos para exportar.");
-                return;
-            }
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(items, null, 2));
+            if (items.length === 0) { alert("No hay datos para exportar."); return; }
+            const dataStr = JSON.stringify(items, null, 2);
+            const blob = new Blob([dataStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
             const downloadAnchor = document.createElement('a');
-            downloadAnchor.setAttribute("href", dataStr);
-            downloadAnchor.setAttribute("download", `inventario_${Date.now()}.json`);
+            downloadAnchor.href = url;
+            downloadAnchor.download = `inventario_glpi_${Date.now()}.json`;
             document.body.appendChild(downloadAnchor);
             downloadAnchor.click();
             downloadAnchor.remove();
+            URL.revokeObjectURL(url);
+        }
+
+        function importJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    if (Array.isArray(importedData)) {
+                        // Fusionar o reemplazar: aquí fusionamos evitando duplicados de serie
+                        let addedCount = 0;
+                        importedData.forEach(impItem => {
+                            const existingIndex = items.findIndex(i => i.code === impItem.code);
+                            if (existingIndex !== -1) {
+                                // Actualiza GLPI ID si viene informado
+                                if (impItem.glpiId) items[existingIndex].glpiId = impItem.glpiId;
+                            } else {
+                                items.push(impItem);
+                                addedCount++;
+                            }
+                        });
+                        saveAndRender();
+                        alert(`¡Importación exitosa! Se añadieron ${addedCount} elementos nuevos y se actualizaron los existentes.`);
+                    } else {
+                        alert("El archivo JSON no tiene el formato correcto.");
+                    }
+                } catch (err) {
+                    alert("Error al parsear el archivo JSON.");
+                }
+                event.target.value = ""; // Reset input
+            };
+            reader.readAsText(file);
         }
 
         function exportCSV() {
-            if (items.length === 0) {
-                alert("No hay datos para exportar.");
-                return;
-            }
-            let csvContent = "data:text/csv;charset=utf-8,Serie,Etiqueta,Cantidad,Fecha\r\n";
+            if (items.length === 0) { alert("No hay datos para exportar."); return; }
+            let csvContent = "Serie,GLPI_ID,Etiqueta,En_PDF_Recuento,Cantidad,Fecha\r\n";
             items.forEach(item => {
+                const inPdf = checkInPdf(item.code, item.glpiId) ? "SI" : "NO";
                 const row = [
                     `"${item.code.replace(/"/g, '""')}"`,
+                    `"${(item.glpiId || "").replace(/"/g, '""')}"`,
                     `"${item.tag.replace(/"/g, '""')}"`,
+                    pdfTextContent ? inPdf : "SIN_PDF",
                     item.quantity || 1,
                     `"${item.date.replace(/"/g, '""')}"`
                 ];
                 csvContent += row.join(",") + "\r\n";
             });
 
-            const encodedUri = encodeURI(csvContent);
+            const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
             const downloadAnchor = document.createElement('a');
-            downloadAnchor.setAttribute("href", encodedUri);
-            downloadAnchor.setAttribute("download", `inventario_${Date.now()}.csv`);
+            downloadAnchor.href = url;
+            downloadAnchor.download = `inventario_glpi_${Date.now()}.csv`;
             document.body.appendChild(downloadAnchor);
             downloadAnchor.click();
             downloadAnchor.remove();
+            URL.revokeObjectURL(url);
         }
 
         function escapeHtml(str) {
             return String(str)
                 .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
+                .replace(/<[/g, '&lt;')
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#039;');
